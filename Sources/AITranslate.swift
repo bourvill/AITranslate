@@ -6,23 +6,10 @@
 //
 
 import ArgumentParser
-import OpenAI
 import Foundation
 
 @main
 struct AITranslate: AsyncParsableCommand {
-  static let systemPrompt =
-    """
-    You are a translator tool that translates UI strings for a software application.
-    Your inputs will be a source language, a target language, the original text, and
-    optionally some context to help you understand how the original text is used within
-    the application. Each piece of information will be inside some XML-like tags.
-    In your response include *only* the translation, and do not include any metadata, tags, 
-    periods, quotes, or new lines, unless included in the original text.
-    Placeholders (like %@, %d, %1$@, etc) should be preserved exactly as they appear in the original text.
-    Treat multi-letter abbreviations (such as common technical acronyms like "HTML", "URL", "API", "HTTP", "HTTPS", "JSON", "XML", "CPU", "GPU", "RAM", "ID", "UI", "UX", etc) as case-sensitive and do not translate them.
-    """
-
   static func gatherLanguages(from input: String) -> [String] {
     input.split(separator: ",")
       .map { String($0).trimmingCharacters(in: .whitespaces) }
@@ -40,9 +27,11 @@ struct AITranslate: AsyncParsableCommand {
 
   @Option(
     name: .shortAndLong,
-    help: ArgumentHelp("Your OpenAI API key, see: https://platform.openai.com/api-keys")
+    help: ArgumentHelp("Ollama base URL (e.g. http://localhost:11434)")
   )
-  var openAIKey: String
+  var ollamaURL: String = "http://localhost:11434"
+
+  private let ollamaModel = "translategemma:4b"
 
   @Flag(name: .shortAndLong)
   var verbose: Bool = false
@@ -59,14 +48,8 @@ struct AITranslate: AsyncParsableCommand {
   )
   var force: Bool = false
 
-  lazy var openAI: OpenAI = {
-    let configuration = OpenAI.Configuration(
-      token: openAIKey,
-      organizationIdentifier: nil,
-      timeoutInterval: 60.0
-    )
-
-    return OpenAI(configuration: configuration)
+  lazy var ollamaClient: OllamaClient = {
+    OllamaClient(baseURL: ollamaURL, model: ollamaModel, timeout: 60.0)
   }()
 
   var numberOfTranslationsProcessed = 0
@@ -143,7 +126,7 @@ struct AITranslate: AsyncParsableCommand {
         from: sourceLanguage,
         to: lang,
         context: localizationGroup.comment,
-        openAI: openAI
+        ollamaClient: ollamaClient
       )
 
       localizationGroup.localizations = localizationEntries
@@ -186,7 +169,7 @@ struct AITranslate: AsyncParsableCommand {
     from source: String,
     to target: String,
     context: String? = nil,
-    openAI: OpenAI
+    ollamaClient: OllamaClient
   ) async throws -> String? {
 
     // Skip text that is generally not translated.
@@ -199,25 +182,21 @@ struct AITranslate: AsyncParsableCommand {
       return text
     }
 
-    var translationRequest = "<source>\(source)</source>"
-    translationRequest += "<target>\(target)</target>"
-    translationRequest += "<original>\(text)</original>"
+    let contextSuffix = context.map { "\n\nContext: \($0)" } ?? ""
+    let translationRequest =
+      """
+      You are a professional \(source) (\(source)) to \(target) (\(target)) translator. Your goal is to accurately convey the meaning and nuances of the original \(source) text while adhering to \(target) grammar, vocabulary, and cultural sensitivities.
+      Produce only the \(target) translation, without any additional explanations or commentary. Please translate the following \(source) text into \(target):
 
-    if let context {
-      translationRequest += "<context>\(context)</context>"
-    }
 
-    let query = ChatQuery(
-      messages: [
-        .init(role: .system, content: Self.systemPrompt)!,
-        .init(role: .user, content: translationRequest)!
-      ],
-      model: .gpt4_o
-    )
+      \(text)\(contextSuffix)
+      """
 
     do {
-      let result = try await openAI.chats(query: query)
-      let translation = result.choices.first?.message.content?.string ?? text
+      let translation = try await ollamaClient.translate(
+        userPrompt: translationRequest,
+        fallback: text
+      )
 
       if verbose {
         print("[\(target)] " + text + " -> " + translation)
@@ -232,6 +211,74 @@ struct AITranslate: AsyncParsableCommand {
       }
 
       return nil
+    }
+  }
+}
+
+struct OllamaClient {
+  struct Message: Codable {
+    let role: String
+    let content: String
+  }
+
+  struct ChatRequest: Codable {
+    let model: String
+    let messages: [Message]
+    let stream: Bool
+  }
+
+  struct ChatResponse: Codable {
+    let message: Message?
+  }
+
+  let baseURL: String
+  let model: String
+  let timeout: TimeInterval
+
+  func translate(userPrompt: String, fallback: String) async throws -> String {
+    guard let base = URL(string: baseURL) else {
+      throw URLError(.badURL)
+    }
+    let url = base.appendingPathComponent("api/chat")
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.timeoutInterval = timeout
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+    let payload = ChatRequest(
+      model: model,
+      messages: [
+        Message(role: "user", content: userPrompt)
+      ],
+      stream: false
+    )
+
+    request.httpBody = try JSONEncoder().encode(payload)
+
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let httpResponse = response as? HTTPURLResponse else {
+      throw URLError(.badServerResponse)
+    }
+    guard (200...299).contains(httpResponse.statusCode) else {
+      let errorBody = String(data: data, encoding: .utf8) ?? ""
+      throw OllamaError.http(statusCode: httpResponse.statusCode, body: errorBody)
+    }
+
+    let decoded = try JSONDecoder().decode(ChatResponse.self, from: data)
+    return decoded.message?.content ?? fallback
+  }
+}
+
+enum OllamaError: LocalizedError {
+  case http(statusCode: Int, body: String)
+
+  var errorDescription: String? {
+    switch self {
+    case let .http(statusCode, body):
+      if body.isEmpty {
+        return "HTTP error \(statusCode)"
+      }
+      return "HTTP error \(statusCode): \(body)"
     }
   }
 }

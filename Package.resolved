@@ -1,15 +1,6 @@
 {
   "pins" : [
     {
-      "identity" : "openai",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/MacPaw/OpenAI.git",
-      "state" : {
-        "branch" : "main",
-        "revision" : "843e087929aa806adb611dbca93f9a4a7f28be04"
-      }
-    },
-    {
       "identity" : "swift-argument-parser",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-argument-parser.git",
