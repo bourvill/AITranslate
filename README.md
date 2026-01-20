@@ -21,7 +21,7 @@ swift run ai-translate /path/to/your/Localizable.xcstrings -v -l de,es,fr,he,it,
 Help output:
 
 ```
-  USAGE: ai-translate <input-file> --languages <languages> [--ollama-url <ollama-url>] [--verbose] [--skip-backup] [--force]
+  USAGE: ai-translate <input-file> --languages <languages> [--ollama-url <ollama-url>] [--app-context <app-context>] [--verbose] [--skip-backup] [--force]
 
   ARGUMENTS:
     <input-file>
@@ -30,6 +30,8 @@ Help output:
     -l, --languages <languages> a comma separated list of language codes (must match the language codes used by xcstrings)
     -o, --ollama-url <ollama-url>
                             Ollama base URL (e.g. http://localhost:11434)
+    -a, --app-context <app-context>
+                            Additional application context to help translation quality
     -v, --verbose
     -s, --skip-backup       By default a backup of the input will be created. When this flag is provided, the backup is skipped.
     -f, --force             Forces all strings to be translated, even if an existing translation is present.

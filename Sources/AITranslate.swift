@@ -31,6 +31,12 @@ struct AITranslate: AsyncParsableCommand {
   )
   var ollamaURL: String = "http://localhost:11434"
 
+  @Option(
+    name: .shortAndLong,
+    help: ArgumentHelp("Additional application context to help translation quality")
+  )
+  var appContext: String?
+
   private let ollamaModel = "translategemma:4b"
 
   @Flag(name: .shortAndLong)
@@ -182,14 +188,22 @@ struct AITranslate: AsyncParsableCommand {
       return text
     }
 
-    let contextSuffix = context.map { "\n\nContext: \($0)" } ?? ""
+    var contexts: [String] = []
+    if let context, context.isEmpty == false {
+      contexts.append(context)
+    }
+    if let appContext, appContext.isEmpty == false {
+      contexts.append(appContext)
+    }
+    let combinedContext = contexts.joined(separator: "\n")
+    let contextSentence = combinedContext.isEmpty ? "" : " The context is \(combinedContext)."
     let translationRequest =
       """
       You are a professional \(source) (\(source)) to \(target) (\(target)) translator. Your goal is to accurately convey the meaning and nuances of the original \(source) text while adhering to \(target) grammar, vocabulary, and cultural sensitivities.
-      Produce only the \(target) translation, without any additional explanations or commentary. Please translate the following \(source) text into \(target):
+      Produce only the \(target) translation, without any additional explanations or commentary.\(contextSentence) Please translate the following \(source) text into \(target):
 
 
-      \(text)\(contextSuffix)
+      \(text)
       """
 
     do {
