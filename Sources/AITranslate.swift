@@ -20,8 +20,8 @@ struct AITranslate: AsyncParsableCommand {
 
   @Option(
     name: .shortAndLong,
-    help: ArgumentHelp("A comma separated list of language codes (must match the language codes used by xcstrings)"), 
-    transform: AITranslate.gatherLanguages(from:)
+    help: ArgumentHelp("A comma separated list of language codes (must match the language codes used by xcstrings)"),
+    transform: { @Sendable input in AITranslate.gatherLanguages(from: input) }
   )
   var languages: [String]
 
@@ -37,7 +37,7 @@ struct AITranslate: AsyncParsableCommand {
   )
   var appContext: String?
 
-  private let ollamaModel = "translategemma:4b"
+  private static let ollamaModel = "translategemma:4b"
 
   @Flag(name: .shortAndLong)
   var verbose: Bool = false
@@ -55,7 +55,7 @@ struct AITranslate: AsyncParsableCommand {
   var force: Bool = false
 
   lazy var ollamaClient: OllamaClient = {
-    OllamaClient(baseURL: ollamaURL, model: ollamaModel, timeout: 60.0)
+    OllamaClient(baseURL: ollamaURL, model: Self.ollamaModel, timeout: 60.0)
   }()
 
   var numberOfTranslationsProcessed = 0
